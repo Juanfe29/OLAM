@@ -1,0 +1,26 @@
+node_modules/
+.env
+*.log
+.DS_Store
+
+# SQLite
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# SSH keys
+keys/*_rsa
+keys/*.pem
+keys/*.pub
+
+# Build output
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
