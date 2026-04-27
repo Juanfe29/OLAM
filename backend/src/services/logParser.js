@@ -26,29 +26,44 @@ function detectFile(line) {
   return currentFile;
 }
 
-// Shared timestamp pattern: [DD/MM/YYYY HH:MM:SS.mmm]
-const TS_RE = /\[(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}[.,]\d+)\]/;
+// Formatos reales de los logs del 3CX v20:
+//   - 4 logs (CallFlow, Gateway, Queue, System): "YYYY/MM/DD HH:MM:SS.mmm|####|Level| ..."
+//   - IVR: "DD/MM/YYYY HH:MM:SS.mmm [hex] ..."
+const TS_YMD_RE = /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})[.,](\d+)/;
+const TS_DMY_RE = /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})[.,](\d+)/;
 
 function parseTimestamp(line) {
-  const m = TS_RE.exec(line);
-  return m ? new Date(m[1].replace(',', '.')).toISOString() : new Date().toISOString();
+  let m = TS_YMD_RE.exec(line);
+  if (m) {
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}.${m[7].padEnd(3, '0').slice(0, 3)}Z`).toISOString();
+  }
+  m = TS_DMY_RE.exec(line);
+  if (m) {
+    return new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}.${m[7].padEnd(3, '0').slice(0, 3)}Z`).toISOString();
+  }
+  return new Date().toISOString();
 }
 
-// CallFlow: active calls, states, durations
-// Example: [01/01/2024 10:00:00.000] Call 12345: INVITE from 101 to 901 (ACTIVE)
-const CALL_ACTIVE_RE   = /Call\s+(\d+).*?\bACTIVE\b/i;
-const CALL_ENDED_RE    = /Call\s+(\d+).*?\b(ENDED|RELEASED|BYE)\b/i;
-const CALL_DURATION_RE = /duration[:\s]+(\d+)/i;
+// Nivel de severidad en el formato pipe-separated (col 3): "...|Erro|", "|Warn|", "|Crit|"
+const LEVEL_PIPE_RE = /\|(Erro|Crit|Fatal|Warn)\|/;
 
-// GatewayService: trunk errors
-const ERR_408_RE   = /408/;
-const ERR_503_RE   = /503/;
-const REGISTERED_RE = /registered|registration/i;
-const UNREG_RE      = /unregistered|deregistered/i;
+// CallFlow: el formato exacto cambia con tráfico real. Parser probado:
+//  - "Route failed:" → call_failed
+//  - palabras clave INVITE/BYE/CANCEL/200 OK con un id de llamada hex/numérico
+const CALL_INVITE_RE  = /\bINVITE\b.*?\b(?:Call[Ii]d|callId)[:\s=]*([\w@.-]+)/;
+const CALL_ENDED_KW   = /\b(BYE|CANCEL|TerminatedByUser|ParentConnectionTerminated|Released)\b/i;
+const ROUTE_FAILED_RE = /Route\s+failed/i;
 
-// QueueManager: queue state
-const QUEUE_WAIT_RE  = /waiting[:\s]+(\d+)/i;
-const AGENT_RE       = /agents?.*?online[:\s]+(\d+)/i;
+// GatewayService: 408/503 estricto en contexto SIP, evita matchear timestamps
+const ERR_408_RE   = /\b(SIP\/2\.0\s+408|408\s+Request\s+Timeout|status[:=]\s*408)\b/i;
+const ERR_503_RE   = /\b(SIP\/2\.0\s+503|503\s+Service\s+Unavailable|status[:=]\s*503)\b/i;
+const REGISTERED_RE = /\btrunk\b.*?\b(register(ed)?|active)\b/i;
+const UNREG_RE      = /\b(unregister(ed)?|deregister(ed)?|trunk\s+down|registration\s+failed)\b/i;
+
+// QueueManager: el formato real con tráfico se descubre cuando haya agentes activos.
+// Patrones defensivos basados en docs 3CX:
+const QUEUE_WAIT_RE = /\b(waiting|in\s+queue)[:\s=]+(\d+)/i;
+const AGENT_RE      = /\bagent.*?(online|available|registered)[:\s=]+(\d+)/i;
 
 export function parseLine(rawLine) {
   const fileType = detectFile(rawLine);
@@ -59,12 +74,10 @@ export function parseLine(rawLine) {
 
   switch (fileType) {
     case 'CallFlow': {
-      if (CALL_ACTIVE_RE.test(line)) return { type: 'call_active', callId: CALL_ACTIVE_RE.exec(line)?.[1], ts };
-      if (CALL_ENDED_RE.test(line)) {
-        const m = CALL_ENDED_RE.exec(line);
-        const dur = CALL_DURATION_RE.exec(line);
-        return { type: 'call_ended', callId: m?.[1], duration: dur ? parseInt(dur[1]) : null, ts };
-      }
+      const inv = CALL_INVITE_RE.exec(line);
+      if (inv) return { type: 'call_active', callId: inv[1], ts };
+      if (ROUTE_FAILED_RE.test(line)) return { type: 'call_failed', ts, raw: line };
+      if (CALL_ENDED_KW.test(line))   return { type: 'call_ended', ts };
       break;
     }
     case 'GatewayService': {
@@ -76,13 +89,14 @@ export function parseLine(rawLine) {
     }
     case 'QueueManager': {
       const wm = QUEUE_WAIT_RE.exec(line);
-      if (wm) return { type: 'queue_waiting', count: parseInt(wm[1]), ts };
+      if (wm) return { type: 'queue_waiting', count: parseInt(wm[2]), ts };
       const am = AGENT_RE.exec(line);
-      if (am) return { type: 'agents_online', count: parseInt(am[1]), ts };
+      if (am) return { type: 'agents_online', count: parseInt(am[2]), ts };
       break;
     }
     case 'SystemService': {
-      if (/error|critical|fatal/i.test(line)) return { type: 'system_error', ts, raw: line };
+      const lvl = LEVEL_PIPE_RE.exec(line);
+      if (lvl && /Erro|Crit|Fatal/.test(lvl[1])) return { type: 'system_error', ts, raw: line };
       break;
     }
     default:

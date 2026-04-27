@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import sqlite3 from 'sqlite3';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -13,11 +13,13 @@ export function initDB() {
   const resolvedPath = path.resolve(dbPath);
   mkdirSync(dirname(resolvedPath), { recursive: true });
 
-  db = new Database(resolvedPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  db = new sqlite3.Database(resolvedPath);
 
-  db.exec(`
+  // Enable foreign keys
+  db.run('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA journal_mode = WAL');
+
+  const schema = `
     CREATE TABLE IF NOT EXISTS tests (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       initiated_by TEXT NOT NULL DEFAULT 'unknown',
@@ -39,7 +41,12 @@ export function initDB() {
       data       TEXT NOT NULL,
       FOREIGN KEY (test_id) REFERENCES tests(id)
     );
-  `);
+  `;
+
+  // Split and execute each statement
+  schema.split(';').filter(s => s.trim()).forEach(statement => {
+    db.run(statement);
+  });
 
   console.log(`[DB] Initialized at ${resolvedPath}`);
   return db;

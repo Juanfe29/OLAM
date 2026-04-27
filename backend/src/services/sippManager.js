@@ -56,7 +56,7 @@ export async function runTest(params, initiatedBy) {
     destination: params.destination || '100',
   };
 
-  const testId = insertTest({ ...resolved, initiated_by: initiatedBy });
+  const testId = await insertTest({ ...resolved, initiated_by: initiatedBy });
 
   currentTest = {
     id: testId,
@@ -115,7 +115,7 @@ function runMockTest(testId, params) {
 
     const snap = { calls, errorRate: currentTest.errorRate, elapsed: currentTest.elapsed };
     snapshots.push(snap);
-    if (snapshots.length % 6 === 0) insertSnapshot(testId, snap); // persist every 30s
+    if (snapshots.length % 6 === 0) insertSnapshot(testId, snap).catch(e => console.error('[DB] Snapshot error:', e.message)); // persist every 30s
 
     if (onProgress) onProgress({ ...currentTest });
 
@@ -204,7 +204,7 @@ function buildSummary(snapshots, params) {
 }
 
 function finishTest(testId, result, summary) {
-  finalizeTest(testId, { result, summary });
+  finalizeTest(testId, { result, summary }).catch(e => console.error('[DB] Finalize error:', e.message));
 
   const finished = { ...currentTest, result, summary, status: 'finished' };
   currentTest = null;

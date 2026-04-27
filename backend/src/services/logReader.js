@@ -14,7 +14,7 @@ const LOG_FILES = [
 ].map(f => `${LOGS_PATH}/${f}`);
 
 const state = {
-  activeCalls: new Set(),
+  activeCalls: 0,
   errors408: 0,
   errors503: 0,
   trunkRegistered: true,
@@ -40,7 +40,11 @@ export function startLogReader(onAlert) {
 }
 
 function attachStream() {
-  const cmd = `tail -Fq ${LOG_FILES.join(' ')} 2>&1`;
+  // - stdbuf -oL fuerza line-buffered (sino tail bufferiza por bloques sobre el pipe SSH)
+  // - SIN -q porque necesitamos los headers "==> file <==" para que detectFile()
+  //   sepa qué archivo es cada línea; con -q el parser nunca puede asignar fileType.
+  // - -n 0 evita el dump del histórico al arrancar (solo seguimos lo nuevo).
+  const cmd = `stdbuf -oL tail -F -n 0 ${LOG_FILES.join(' ')} 2>&1`;
 
   streamCleanup = execStream(
     cmd,
@@ -63,10 +67,11 @@ function attachStream() {
 function applyEvent(event) {
   switch (event.type) {
     case 'call_active':
-      state.activeCalls.add(event.callId);
+      state.activeCalls++;
       break;
     case 'call_ended':
-      state.activeCalls.delete(event.callId);
+    case 'call_failed':
+      state.activeCalls = Math.max(0, state.activeCalls - 1);
       break;
     case 'error_408':
       state.errors408++;
@@ -116,7 +121,7 @@ export function resetHourlyCounters() {
 
 export function getLogState() {
   return {
-    activeCalls: state.activeCalls.size,
+    activeCalls: state.activeCalls,
     errors408:   state.errors408,
     errors503:   state.errors503,
     trunkRegistered: state.trunkRegistered,

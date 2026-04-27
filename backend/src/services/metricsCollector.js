@@ -124,6 +124,32 @@ function parsePrometheus(text) {
   return values;
 }
 
+// Busca el primer metric cuyo nombre coincida y cumpla el matcher de labels
+function findByLabel(metrics, name, labelMatch) {
+  const prefix = name + '{';
+  for (const [key, val] of Object.entries(metrics)) {
+    if (!key.startsWith(prefix)) continue;
+    if (labelMatch(key)) return val;
+  }
+  return undefined;
+}
+
+// Suma todos los metrics que coincidan en nombre y labels (ej: total de tráfico
+// sumando todas las interfaces físicas del host)
+function sumByLabel(metrics, name, labelMatch) {
+  const prefix = name + '{';
+  let total = 0;
+  for (const [key, val] of Object.entries(metrics)) {
+    if (!key.startsWith(prefix)) continue;
+    if (labelMatch && !labelMatch(key)) continue;
+    total += val;
+  }
+  return total;
+}
+
+// Excluye loopback y virtuales — el 3CX usa ens192/ens224 (VMware)
+const PHYSICAL_IFACE = (key) => !/device="(lo|docker|veth|br-|tun|tap)/.test(key);
+
 function extractCpuPercent(metrics) {
   // Sum idle and total across all CPUs to calculate usage %
   let idleTotal = 0, allTotal = 0;
@@ -159,9 +185,12 @@ async function fetchRealMetrics() {
     const memAvail = pm['node_memory_MemAvailable_bytes'] || 0;
     const ramPct   = ((memTotal - memAvail) / memTotal) * 100;
 
-    const diskOs   = pm['node_filesystem_size_bytes{mountpoint="/"}']
-      ? (1 - pm['node_filesystem_free_bytes{mountpoint="/"}'] / pm['node_filesystem_size_bytes{mountpoint="/"}']) * 100
-      : 0;
+    // Disco "/" — match por mountpoint sin importar device/fstype.
+    // El 3CX no tiene mount separado para grabaciones; recordings queda en 0
+    // hasta que el ops del cliente monte un volumen dedicado.
+    const fsSize = findByLabel(pm, 'node_filesystem_size_bytes', k => k.includes('mountpoint="/"'));
+    const fsFree = findByLabel(pm, 'node_filesystem_free_bytes', k => k.includes('mountpoint="/"'));
+    const diskOs = (fsSize && fsFree) ? (1 - fsFree / fsSize) * 100 : 0;
 
     hostMetrics = {
       cpu:     Math.round(cpuPct * 10) / 10,
@@ -169,8 +198,8 @@ async function fetchRealMetrics() {
       loadAvg: [pm['node_load1'] || 0, pm['node_load5'] || 0, pm['node_load15'] || 0],
       disk:    { os: Math.round(diskOs), recordings: 0 },
       network: {
-        rx: pm['node_network_receive_bytes_total{device="eth0"}']  || 0,
-        tx: pm['node_network_transmit_bytes_total{device="eth0"}'] || 0,
+        rx: sumByLabel(pm, 'node_network_receive_bytes_total',  PHYSICAL_IFACE),
+        tx: sumByLabel(pm, 'node_network_transmit_bytes_total', PHYSICAL_IFACE),
       },
     };
   } catch (err) {

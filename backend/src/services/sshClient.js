@@ -1,14 +1,21 @@
 import { NodeSSH } from 'node-ssh';
+import net from 'net';
 
 const MOCK = process.env.MOCK_MODE === 'true';
 const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 30000;
+
+// SSH tunnel para node_exporter cuando el firewall upstream bloquea :9100
+const TUNNEL_VIA_SSH = process.env.NODE_EXPORTER_VIA_SSH === 'true';
+const TUNNEL_LOCAL_PORT = parseInt(process.env.NODE_EXPORTER_TUNNEL_PORT || '9100');
+const TUNNEL_REMOTE_PORT = 9100;
 
 let ssh = null;
 let connected = false;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 let streamCleanups = [];
+let tunnelServer = null;
 
 async function connect() {
   if (MOCK) {
@@ -30,21 +37,69 @@ async function connect() {
     reconnectAttempts = 0;
     console.log(`[SSH] Connected to ${process.env.SSH_HOST}`);
 
+    startTunnel();
+
     ssh.connection.on('error', (err) => {
       console.error('[SSH] Connection error:', err.message);
       connected = false;
+      stopTunnel();
       scheduleReconnect();
     });
 
     ssh.connection.on('end', () => {
       console.warn('[SSH] Connection ended');
       connected = false;
+      stopTunnel();
       scheduleReconnect();
     });
   } catch (err) {
     console.error('[SSH] Connect failed:', err.message);
     connected = false;
     scheduleReconnect();
+  }
+}
+
+function startTunnel() {
+  if (!TUNNEL_VIA_SSH || MOCK || !ssh?.connection) return;
+  if (tunnelServer) return;
+
+  tunnelServer = net.createServer((socket) => {
+    if (!ssh?.connection) {
+      socket.destroy();
+      return;
+    }
+    ssh.connection.forwardOut(
+      '127.0.0.1', 0,
+      '127.0.0.1', TUNNEL_REMOTE_PORT,
+      (err, stream) => {
+        if (err) {
+          console.error('[SSH tunnel] forwardOut error:', err.message);
+          socket.destroy();
+          return;
+        }
+        // Listeners primero — un ECONNRESET durante un pipe sin handler tira el proceso
+        socket.on('error', () => stream.destroy());
+        stream.on('error', () => socket.destroy());
+        socket.pipe(stream).pipe(socket);
+      },
+    );
+    socket.on('error', () => {}); // catch antes de que forwardOut resuelva
+  });
+
+  tunnelServer.on('error', (err) => {
+    console.error(`[SSH tunnel] Listener error on :${TUNNEL_LOCAL_PORT}:`, err.message);
+    tunnelServer = null;
+  });
+
+  tunnelServer.listen(TUNNEL_LOCAL_PORT, '127.0.0.1', () => {
+    console.log(`[SSH tunnel] Forwarding 127.0.0.1:${TUNNEL_LOCAL_PORT} → 3CX:${TUNNEL_REMOTE_PORT}`);
+  });
+}
+
+function stopTunnel() {
+  if (tunnelServer) {
+    tunnelServer.close();
+    tunnelServer = null;
   }
 }
 
