@@ -133,7 +133,7 @@ function runMockTest(testId, params) {
 
 function runRealSipp(testId, params) {
   const target      = `${process.env.SSH_HOST}:5060`;
-  const sippBin     = os.platform() === 'win32' ? 'sipp.exe' : 'sipp';
+  const sippBin     = process.env.SIPP_BIN || (os.platform() === 'win32' ? 'sipp.exe' : 'sipp');
   const durationMs  = params.duration * 1000;
 
   const args = [
