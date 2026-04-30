@@ -148,7 +148,14 @@ function runRealSipp(testId, params) {
     '-nostdin',
   ];
 
-  console.log(`[SIPp] ${sippBin} ${args.join(' ')}`);
+  const authUser = process.env.SIPP_AUTH_USER;
+  const authPass = process.env.SIPP_AUTH_PASS;
+  if (authUser && authPass) {
+    args.push('-au', authUser, '-ap', authPass);
+  }
+
+  const logArgs = args.map((a, i) => (args[i - 1] === '-ap' ? '***' : a));
+  console.log(`[SIPp] ${sippBin} ${logArgs.join(' ')}`);
 
   try {
     sippProcess = spawn(sippBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
