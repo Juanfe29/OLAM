@@ -1,0 +1,514 @@
+{
+  "info": {
+    "_postman_id": "b1f3c9e0-0000-4000-a000-000000000001",
+    "name": "OLAM 3CX Audit API",
+    "description": "Colección de pruebas para el backend de OLAM 3CX Audit Platform.\n\n## Cómo usar\n\n1. Importar también `OLAM-Audit.postman_environment.json` y activarlo.\n2. Arrancar el backend: `cd backend && npm run dev` (corre en modo mock por defecto).\n3. Ejecutar la colección completa con Runner o ejecutar endpoints uno a uno.\n\n## Convenciones\n\n- `baseUrl` apunta a `http://localhost:3000` por defecto.\n- `testId` se guarda automáticamente al correr `POST /api/tests/run` para usar en los endpoints de historial.\n- Cada request tiene tests automáticos que validan código HTTP y forma del response.\n\n## Flujo recomendado de pruebas\n\n1. **Health** → `GET /api/health` (sanity check)\n2. **Status** → `/api/status`, `/trunk`, `/host` (valida que haya métricas)\n3. **Scenarios** → `GET /api/tests/scenarios`\n4. **Run smoke** → `POST /api/tests/run` con `{ \"scenario\": \"smoke\" }`\n5. **Lock check** → repetir `POST /api/tests/run` inmediatamente → debe fallar 400\n6. **Stop** → `POST /api/tests/stop`\n7. **History** → `GET /api/history` y `GET /api/history/:id`\n\n## Nota sobre licencia SC32\n\nLa licencia actual es SC32 (32 llamadas simultáneas). Los escenarios `medium`, `peak`, `stress` y `soak` van a ejecutarse en el backend (el backend aplica sus propios límites duros: 200 llamadas / 20 rampa / 8h) pero el 3CX real los rechazará con licencia SC32. En modo mock se simulan sin problema.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "testId",  "value": "",                      "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 · Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] },
+            "description": "Sanity check del backend. Debe responder siempre 200 con `status: ok`, modo mock/real y estado SSH."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status === ok', () => pm.expect(body.status).to.eql('ok'));",
+                  "pm.test('mock flag es boolean', () => pm.expect(body.mock).to.be.a('boolean'));",
+                  "pm.test('ssh flag es boolean', () => pm.expect(body.ssh).to.be.a('boolean'));",
+                  "pm.test('timestamp ISO', () => pm.expect(body.timestamp).to.match(/^\\d{4}-\\d{2}-\\d{2}T/));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 · Status",
+      "item": [
+        {
+          "name": "GET Status (métricas en vivo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/status", "host": ["{{baseUrl}}"], "path": ["api", "status"] },
+            "description": "Snapshot completo: métricas host + troncal + alertas + estado SSH + bandera mock. Puede devolver 503 si el collector aún no produjo el primer tick (~5s desde arranque)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 503 (503 solo en los primeros segundos)', () => pm.expect([200, 503]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('tiene ssh.connected', () => pm.expect(body).to.have.nested.property('ssh.connected'));",
+                  "  pm.test('alerts es array', () => pm.expect(body.alerts).to.be.an('array'));",
+                  "  pm.test('mock es boolean', () => pm.expect(body.mock).to.be.a('boolean'));",
+                  "  pm.test('al menos contiene host o trunk', () => pm.expect(body.host || body.trunk).to.not.be.undefined);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Status · Trunk (Tigo UNE)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/status/trunk", "host": ["{{baseUrl}}"], "path": ["api", "status", "trunk"] },
+            "description": "Estado de la troncal SIP Tigo UNE: registro, canales en uso, errores 408/503, MOS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 503', () => pm.expect([200, 503]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('respuesta es objeto', () => pm.expect(body).to.be.an('object'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Status · Host (node_exporter)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/status/host", "host": ["{{baseUrl}}"], "path": ["api", "status", "host"] },
+            "description": "CPU, RAM, disco, red del host 3CX. Fuente: Prometheus node_exporter (real) o simulación (mock)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 o 503', () => pm.expect([200, 503]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('respuesta es objeto', () => pm.expect(body).to.be.an('object'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 · Tests (SIPp Manager)",
+      "item": [
+        {
+          "name": "GET Scenarios",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tests/scenarios", "host": ["{{baseUrl}}"], "path": ["api", "tests", "scenarios"] },
+            "description": "Lista los 6 escenarios predefinidos: smoke, light, medium, peak, stress, soak."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const expected = ['smoke', 'light', 'medium', 'peak', 'stress', 'soak'];",
+                  "expected.forEach(k => pm.test(`preset ${k} presente`, () => pm.expect(body).to.have.property(k)));",
+                  "pm.test('smoke tiene calls/duration/ramp', () => {",
+                  "  pm.expect(body.smoke).to.have.all.keys('calls', 'duration', 'ramp', 'name');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Test status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tests/status", "host": ["{{baseUrl}}"], "path": ["api", "tests", "status"] },
+            "description": "Estado de la prueba en curso. Si no hay nada corriendo devuelve `{ running: false }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('tiene flag running', () => pm.expect(body.running).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Run · preset smoke",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"smoke\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/tests/run", "host": ["{{baseUrl}}"], "path": ["api", "tests", "run"] },
+            "description": "Ejecuta el preset `smoke` (1 llamada / 30s). Usar como primer test para validar el pipeline completo SIPp → DB → WebSocket."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('ok === true', () => pm.expect(body.ok).to.be.true);",
+                  "pm.test('testId es número', () => pm.expect(body.testId).to.be.a('number'));",
+                  "pm.test('max_calls === 1 (preset smoke)', () => pm.expect(body.max_calls).to.eql(1));",
+                  "pm.test('duration === 30', () => pm.expect(body.duration).to.eql(30));",
+                  "if (body.testId) pm.collectionVariables.set('testId', body.testId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Run · preset light",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"light\",\n  \"destination\": \"100\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/tests/run", "host": ["{{baseUrl}}"], "path": ["api", "tests", "run"] },
+            "description": "Preset `light`: 10 llamadas / 60s / rampa 2/s. Dentro del tier SC32."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 (si no hay otra prueba corriendo)', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('max_calls === 10', () => pm.expect(body.max_calls).to.eql(10));",
+                  "  pm.test('ramp_rate === 2',  () => pm.expect(body.ramp_rate).to.eql(2));",
+                  "  if (body.testId) pm.collectionVariables.set('testId', body.testId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Run · custom (dentro de SC32)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"max_calls\": 20,\n  \"duration\": 90,\n  \"ramp_rate\": 3,\n  \"destination\": \"100\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/tests/run", "host": ["{{baseUrl}}"], "path": ["api", "tests", "run"] },
+            "description": "Parámetros custom dentro del tier SC32 (20 llamadas). Valida path sin preset."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 o 400', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('scenario === custom', () => pm.expect(body.scenario).to.eql('custom'));",
+                  "  pm.test('max_calls === 20',    () => pm.expect(body.max_calls).to.eql(20));",
+                  "  if (body.testId) pm.collectionVariables.set('testId', body.testId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Run · excede límite duro (max_calls=500)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"max_calls\": 500,\n  \"duration\": 60,\n  \"ramp_rate\": 50\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/tests/run", "host": ["{{baseUrl}}"], "path": ["api", "tests", "run"] },
+            "description": "El backend tiene límites duros (200 llamadas / 20 rampa / 8h). Los valores enviados se CAPean — no se rechazan — por el `Math.min(...)` en `runTest`. Este test verifica que el backend devuelve 200 con valores recortados."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 o 400', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('max_calls capeado a ≤ 200', () => pm.expect(body.max_calls).to.be.at.most(200));",
+                  "  pm.test('ramp_rate capeado a ≤ 20',  () => pm.expect(body.ramp_rate).to.be.at.most(20));",
+                  "  if (body.testId) pm.collectionVariables.set('testId', body.testId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Run · lock (segunda prueba concurrente)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"smoke\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/tests/run", "host": ["{{baseUrl}}"], "path": ["api", "tests", "run"] },
+            "description": "Intentar iniciar una prueba mientras otra ya está en curso debe devolver 400 con mensaje claro. **Ejecutar inmediatamente después de un `POST /run` exitoso.**"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 (lock activo)', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('ok === false', () => pm.expect(body.ok).to.be.false);",
+                  "pm.test('mensaje contiene \"prueba en curso\"', () => pm.expect(body.error).to.match(/prueba/i));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/api/tests/stop", "host": ["{{baseUrl}}"], "path": ["api", "tests", "stop"] },
+            "description": "Detiene la prueba en curso. Si no hay nada corriendo devuelve 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 (prueba detenida) o 400 (no había prueba)', () => pm.expect([200, 400]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "pm.test('tiene flag ok', () => pm.expect(body.ok).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Stop · sin prueba activa",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{baseUrl}}/api/tests/stop", "host": ["{{baseUrl}}"], "path": ["api", "tests", "stop"] },
+            "description": "Correr sin ninguna prueba activa → 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test('ok === false', () => pm.expect(body.ok).to.be.false);",
+                  "pm.test('error menciona no hay prueba', () => pm.expect(body.error).to.match(/no hay prueba/i));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 · History",
+      "item": [
+        {
+          "name": "GET History (default 50)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/history", "host": ["{{baseUrl}}"], "path": ["api", "history"] },
+            "description": "Lista las últimas pruebas (default limit=50, offset=0)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('es array', () => pm.expect(body).to.be.an('array'));",
+                  "pm.test('respeta limit default (≤ 50)', () => pm.expect(body.length).to.be.at.most(50));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET History · paginado (limit=5, offset=0)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history?limit=5&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history"],
+              "query": [
+                { "key": "limit",  "value": "5" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Paginación custom. El backend clampa `limit` a máx 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('respeta limit=5', () => pm.expect(body.length).to.be.at.most(5));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET History · limit excesivo (500 → cap 200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/history?limit=500",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "history"],
+              "query": [{ "key": "limit", "value": "500" }]
+            },
+            "description": "El backend aplica `Math.min(parseInt(limit), 200)` — verifica que valores grandes se capean silenciosamente."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('nunca excede 200 items', () => pm.expect(body.length).to.be.at.most(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET History · por id (usa {{testId}})",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/history/{{testId}}", "host": ["{{baseUrl}}"], "path": ["api", "history", "{{testId}}"] },
+            "description": "Detalle de una prueba. `{{testId}}` se setea automáticamente al correr `POST /api/tests/run`. Si no hay testId, se espera 404 o que la variable esté vacía."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('testId')) {",
+                  "  console.warn('testId vacío — corré primero POST /api/tests/run');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 o 404', () => pm.expect([200, 404]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.test('tiene id', () => pm.expect(body).to.have.property('id'));",
+                  "  pm.test('tiene scenario', () => pm.expect(body).to.have.property('scenario'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET History · id inexistente (999999)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/history/999999", "host": ["{{baseUrl}}"], "path": ["api", "history", "999999"] },
+            "description": "Id que seguramente no existe → 404 con error claro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "const body = pm.response.json();",
+                  "pm.test('error === Test not found', () => pm.expect(body.error).to.match(/not found/i));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
