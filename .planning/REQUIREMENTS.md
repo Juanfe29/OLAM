@@ -103,38 +103,36 @@ Excluido explícitamente. Documentado para evitar scope creep.
 
 ## Traceability
 
-A llenar por el roadmapper en el siguiente paso.
-
 | Requirement | Phase | Status |
 |---|---|---|
-| BLOCK-01 | TBD | Pending |
-| BLOCK-02 | TBD | Pending |
-| BLOCK-03 | TBD | Pending |
-| FIND-01 | TBD | Pending |
-| FIND-02 | TBD | Pending |
-| FIND-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| TEST-03 | TBD | Pending |
-| TEST-04 | TBD | Blocked (licencia SC192) |
-| TEST-05 | TBD | Blocked (licencia SC192) |
-| METRIC-01 | TBD | Pending |
-| METRIC-02 | TBD | Pending |
-| METRIC-03 | TBD | Pending |
-| METRIC-04 | TBD | Pending |
-| MON-01 | TBD | Pending |
-| MON-02 | TBD | Pending |
-| MON-03 | TBD | Pending |
-| MON-04 | TBD | Pending |
-| OPS-01 | TBD | Pending |
-| OPS-02 | TBD | Pending |
-| OPS-03 | TBD | Pending |
+| BLOCK-01 | Phase 1 | Pending |
+| BLOCK-02 | Phase 1 | Pending |
+| BLOCK-03 | Phase 1 | Pending |
+| FIND-01 | Phase 1 | Pending |
+| FIND-02 | Phase 2 | Pending |
+| FIND-03 | Phase 2 | Pending |
+| TEST-01 | Phase 3 | Pending |
+| TEST-02 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Pending |
+| TEST-04 | Phase 7 | Blocked (licencia SC192) |
+| TEST-05 | Phase 7 | Blocked (licencia SC192) |
+| METRIC-01 | Phase 5 | Pending |
+| METRIC-02 | Phase 5 | Pending |
+| METRIC-03 | Phase 5 | Pending |
+| METRIC-04 | Phase 5 | Pending |
+| MON-01 | Phase 4 | Pending |
+| MON-02 | Phase 4 | Pending |
+| MON-03 | Phase 4 | Pending |
+| MON-04 | Phase 4 | Pending |
+| OPS-01 | Phase 6 | Pending |
+| OPS-02 | Phase 6 | Pending |
+| OPS-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 22 ⚠️ (resolved when roadmap is created)
+- Mapped to phases: 22/22 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-02*
-*Last updated: 2026-05-02 after initial definition*
+*Last updated: 2026-05-02 — traceability filled by roadmapper*
