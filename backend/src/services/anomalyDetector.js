@@ -149,3 +149,18 @@ export function evaluate(metrics) {
 export function getActiveAlerts() {
   return Array.from(activeAlerts.values());
 }
+
+// Permite que otros servicios (logReader, sippManager) registren alertas
+// que persistan en el snapshot devuelto a clientes recién conectados.
+// Sin esto las alertas vía io.emit('alert:new') se pierden si el frontend
+// se reconecta — solo viven el momento del envío.
+export function addExternalAlert(alert) {
+  if (!alert?.id) return;
+  activeAlerts.set(alert.id, { ...alert, permanent: false });
+}
+
+export function clearExternalAlert(id) {
+  if (!id) return;
+  const existing = activeAlerts.get(id);
+  if (existing && !existing.permanent) activeAlerts.delete(id);
+}
