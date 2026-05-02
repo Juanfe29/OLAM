@@ -1,10 +1,17 @@
 import { Router } from 'express';
 import { runTest, stopTest, getTestStatus, getScenarios } from '../services/sippManager.js';
+import { getValidExtensions } from '../services/destinationValidator.js';
 
 const router = Router();
 
 router.get('/scenarios', (req, res) => {
   res.json(getScenarios());
+});
+
+router.get('/destinations', (req, res) => {
+  // BLOCK-01: expone la lista de extensiones válidas del 3CX para
+  // que el frontend pueda mostrarla al operador en TestControl.
+  res.json({ valid: getValidExtensions() });
 });
 
 router.get('/status', (req, res) => {
