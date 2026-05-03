@@ -137,9 +137,22 @@ export default function History() {
                 <div className="bg-surface border border-surface-border rounded-lg p-4">
                   <p className="text-xs uppercase tracking-widest text-slate-500 mb-3">Resumen</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
-                    <DetailStat label="Max calls"   value={selected.summary.maxCalls}   />
-                    <DetailStat label="Avg calls"   value={selected.summary.avgCalls}   />
-                    <DetailStat label="Avg error"   value={`${selected.summary.avgErrorRate}%`} />
+                    {selected.summary.source === 'csv' ? (
+                      <>
+                        <DetailStat label="Total calls"  value={selected.summary.totalCalls} />
+                        <DetailStat label="Successful"   value={selected.summary.successful} />
+                        <DetailStat label="Failed"       value={selected.summary.failed} />
+                        <DetailStat label="Max concurrent" value={selected.summary.maxCalls} />
+                        <DetailStat label="Call rate"    value={selected.summary.callRate != null ? `${selected.summary.callRate.toFixed(2)} cps` : '—'} />
+                        <DetailStat label="Avg error"    value={`${selected.summary.avgErrorRate}%`} />
+                      </>
+                    ) : (
+                      <>
+                        <DetailStat label="Max calls"   value={selected.summary.maxCalls} />
+                        <DetailStat label="Avg calls"   value={selected.summary.avgCalls} />
+                        <DetailStat label="Avg error"   value={`${selected.summary.avgErrorRate}%`} />
+                      </>
+                    )}
                     <DetailStat label="Peak reached" value={selected.summary.peakReached ? 'sí' : 'no'} />
                     <DetailStat label="Pasó"         value={selected.summary.passed ? 'sí' : 'no'} />
                   </div>

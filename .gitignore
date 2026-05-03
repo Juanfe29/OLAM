@@ -18,6 +18,11 @@ keys/*.pub
 dist/
 build/
 
+# Deploy bundles (transferencia .35)
+*.tar.gz
+*.bundle
+olam-bundle*
+
 # IDE
 .vscode/
 .idea/

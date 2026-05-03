@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import os from 'os';
 import fs from 'fs';
+import path from 'path';
 import { insertTest, finalizeTest, insertSnapshot } from '../db/queries.js';
 import { setMockTestOverride } from './metricsCollector.js';
 import { validateDestinationOrThrow } from './destinationValidator.js';
@@ -170,8 +171,21 @@ function runRealSipp(testId, params) {
   const logArgs = args.map((a, i) => (args[i - 1] === '-ap' ? '***' : a));
   console.log(`[SIPp] ${sippBin} ${logArgs.join(' ')}  (cwd=${sippCwd})`);
 
+  // Cygwin en Windows: sipp.exe depende de cygwin1.dll y demás en cygwin64\bin.
+  // El shell de Cygwin las tiene en su PATH, pero `child_process.spawn` hereda
+  // solo el PATH del backend (Windows nativo) — sin esto SIPp arranca y muere
+  // por DLL faltante antes de escribir el _statistics.csv.
+  const cygwinBin = process.env.CYGWIN_BIN_PATH;
+  const childEnv = cygwinBin
+    ? { ...process.env, PATH: cygwinBin + path.delimiter + (process.env.PATH || '') }
+    : process.env;
+
   try {
-    sippProcess = spawn(sippBin, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: sippCwd });
+    sippProcess = spawn(sippBin, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: sippCwd,
+      env: childEnv,
+    });
   } catch (err) {
     finishTest(testId, 'ERROR', { error: err.message });
     throw err;
@@ -185,13 +199,31 @@ function runRealSipp(testId, params) {
   sippProcess.stderr.on('data', (chunk) => {
     const line = chunk.toString();
     parseSippStats(line, snapshots, testId);
+    // Visibilidad: si SIPp emite errores fatales (DLL faltante, bind fail,
+    // socket error, auth) los logueamos crudo. Filtramos para no inundar
+    // con líneas de stats normales que ya parsea parseSippStats.
+    if (/error|fatal|cannot|unable|undefined symbol|\.dll|terminat/i.test(line)) {
+      console.error('[SIPp:stderr]', line.trim());
+    }
     if (currentTest) {
       currentTest.elapsed = Math.round((Date.now() - startTime) / 1000);
       if (onProgress) onProgress({ ...currentTest });
     }
   });
 
-  sippProcess.on('close', async (code) => {
+  sippProcess.stdout.on('data', (chunk) => {
+    const line = chunk.toString().trim();
+    if (line) console.log('[SIPp:stdout]', line);
+  });
+
+  sippProcess.on('close', async (code, signal) => {
+    console.log(`[SIPp] proceso terminó: code=${code} signal=${signal}`);
+    try {
+      const cwdEntries = fs.readdirSync(sippCwd);
+      console.log(`[SIPp] cwd contents (${sippCwd}):`, cwdEntries);
+    } catch (e) {
+      console.warn('[SIPp] no se pudo listar cwd:', e.message);
+    }
     sippProcess = null;
 
     // BLOCK-02: leer el _statistics.csv final de SIPp en lugar de
@@ -204,9 +236,13 @@ function runRealSipp(testId, params) {
       console.warn('[SIPp] No se pudo leer _statistics.csv:', e.message);
     }
 
+    console.log('[SIPp] csvSummary parseado:', JSON.stringify(csvSummary));
+
     const summary = csvSummary
       ? buildSummaryFromCsv(csvSummary, params, snapshots)
       : buildSummary(snapshots, params);
+
+    console.log('[SIPp] summary final:', JSON.stringify(summary));
 
     if (!csvSummary) {
       console.warn('[SIPp] _statistics.csv no apareció — usando snapshots de stderr (fallback).');
@@ -252,7 +288,11 @@ function buildSummaryFromCsv(csv, params, fallbackSnapshots = []) {
   const failed     = csv.failed ?? 0;
   const maxCalls   = csv.maxConcurrent ?? Math.max(0, ...fallbackSnapshots.map(s => s.calls || 0));
   const errorRate  = total > 0 ? (failed / total) * 100 : 0;
-  const peakReached = maxCalls >= params.max_calls * 0.9;
+  // peakReached basado en `total` (TotalCallCreated) en vez de `maxConcurrent`:
+  // los snapshots periódicos del CSV pueden caer en momentos donde CurrentCall=0
+  // (entre el inicio y fin de una llamada corta), perdiendo el pico real.
+  // `total` es cumulativo y captura el verdadero alcance del test.
+  const peakReached = total >= params.max_calls * 0.9;
   const passed     = peakReached && errorRate < 5 && successful > 0;
 
   return {

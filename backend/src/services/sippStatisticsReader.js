@@ -33,13 +33,15 @@ export function newSippWorkingDir() {
   return path.join(os.tmpdir(), `olam-sipp-${Date.now()}`);
 }
 
-// Encuentra el `*_statistics.csv` más reciente en `dir`.
-// SIPp lo nombra como `<scenario>_<pid>_<timestamp>_statistics.csv`.
+// Encuentra el CSV de stats más reciente en `dir`.
+// SIPp 3.7+ documenta el sufijo `_statistics.csv`, pero la build de Cygwin
+// observada en `.35` (3.7.3) escribe `<scenario>_<pid>_.csv`. El cwd es
+// dedicado por test, así que aceptamos cualquier `.csv` ahí adentro.
 export async function findStatisticsFile(dir) {
   try {
     const entries = await fs.readdir(dir);
     const stats = entries
-      .filter(name => name.endsWith('_statistics.csv') || name.endsWith('_stat.csv'))
+      .filter(name => name.toLowerCase().endsWith('.csv'))
       .map(name => path.join(dir, name));
     if (stats.length === 0) return null;
     // Si hay más de uno (raro), tomar el más reciente
@@ -77,7 +79,7 @@ export function waitForStatisticsFile(dir, { timeoutMs = 5000, graceMs = 500 } =
     };
 
     const onPath = (p) => {
-      if (!p.endsWith('_statistics.csv') && !p.endsWith('_stat.csv')) return;
+      if (!p.toLowerCase().endsWith('.csv')) return;
       cleanup(p);
     };
 

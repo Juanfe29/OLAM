@@ -110,9 +110,19 @@ export default function Tests() {
               </div>
               {lastResult.summary && (
                 <div className="grid grid-cols-3 gap-2 text-xs text-slate-400 font-mono">
-                  <span>Max calls: {lastResult.summary.maxCalls}</span>
-                  <span>Avg error: {lastResult.summary.avgErrorRate}%</span>
-                  <span>Peak reached: {lastResult.summary.peakReached ? 'sí' : 'no'}</span>
+                  {lastResult.summary.source === 'csv' ? (
+                    <>
+                      <span>Total: {lastResult.summary.totalCalls}</span>
+                      <span>Success: {lastResult.summary.successful}</span>
+                      <span>Failed: {lastResult.summary.failed}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Max calls: {lastResult.summary.maxCalls}</span>
+                      <span>Avg error: {lastResult.summary.avgErrorRate}%</span>
+                      <span>Peak reached: {lastResult.summary.peakReached ? 'sí' : 'no'}</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
