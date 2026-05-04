@@ -20,13 +20,21 @@ async function connect() {
 
   ssh = new NodeSSH();
   try {
-    await ssh.connect({
+    const sshConfig = {
       host: process.env.SSH_HOST,
       port: parseInt(process.env.SSH_PORT || '22'),
       username: process.env.SSH_USER || 'root',
-      privateKeyPath: process.env.SSH_KEY_PATH,
       readyTimeout: 10000,
-    });
+    };
+
+    // Usar password si está disponible, si no usar key
+    if (process.env.SSH_PASSWORD) {
+      sshConfig.password = process.env.SSH_PASSWORD;
+    } else {
+      sshConfig.privateKeyPath = process.env.SSH_KEY_PATH;
+    }
+
+    await ssh.connect(sshConfig);
     connected = true;
     reconnectAttempts = 0;
     console.log(`[SSH] Connected to ${process.env.SSH_HOST}`);

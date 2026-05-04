@@ -8,7 +8,7 @@ import { readSippStatistics, newSippWorkingDir } from './sippStatisticsReader.js
 
 // Hard limits — enforced regardless of what the frontend sends
 const LIMITS = {
-  maxCalls:    200,
+  maxCalls:    256,
   maxRamp:     20,
   maxDuration: 8 * 3600,
 };
@@ -20,6 +20,7 @@ const SCENARIOS = {
   peak:   { calls: 180, duration: 300,   ramp: 10, name: 'Peak load'   },
   stress: { calls: 220, duration: 180,   ramp: 15, name: 'Stress test' },
   soak:   { calls: 125, duration: 14400, ramp: 5,  name: 'Soak test'   },
+  max:    { calls: 256, duration: 300,   ramp: 15, name: 'Max capacity' },
 };
 
 let currentTest = null;
