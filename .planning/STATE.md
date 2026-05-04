@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-02T19:01:19.767Z"
-last_activity: 2026-05-02 — Roadmap creado, requirements mapeados, STATE inicializado
+status: executing
+stopped_at: Phase 1 closed (smoke + light tests verified end-to-end)
+last_updated: "2026-05-04T14:35:00.000Z"
+last_activity: 2026-05-04 — Phase 1 reconciled; backend data model transition from mock → real data only
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 14.3
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-02)
 
 **Core value:** El dashboard en vivo + historial SQLite ES la evidencia del assessment. Si todo lo demás falla, esto debe seguir vivo y accesible para que TI OLAM lo opere de forma autónoma post-handoff.
-**Current focus:** Phase 1 — Unblock
+**Current focus:** Phase 2 — Data Model (real data only, no MOCK_MODE)
 
 ## Current Position
 
-Phase: 1 of 7 (Unblock)
+Phase: 2 of 7 (Data Model)
 Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-05-02 — Roadmap creado, requirements mapeados, STATE inicializado
+Status: Executing
+Last activity: 2026-05-04 — Phase 1 reconciled; removed MOCK_MODE, backend always connects to real 172.18.164.28
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████░░░░░░] 14.3%
 
 ## Performance Metrics
 

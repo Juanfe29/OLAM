@@ -29,7 +29,6 @@ app.use('/api/history', historyRoutes);
 app.get('/api/health', (req, res) => {
   res.json({
     status:    'ok',
-    mock:      process.env.MOCK_MODE === 'true',
     ssh:       isConnected(),
     timestamp: new Date().toISOString(),
   });
@@ -67,6 +66,5 @@ initSippManager({
 
 const PORT = parseInt(process.env.PORT || '3000');
 httpServer.listen(PORT, () => {
-  const mode = process.env.MOCK_MODE === 'true' ? 'MOCK' : 'PRODUCTION';
-  console.log(`[OLAM] Backend running on http://localhost:${PORT} [${mode} MODE]`);
+  console.log(`[OLAM] Backend running on http://localhost:${PORT}`);
 });

@@ -3,11 +3,8 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { insertTest, finalizeTest, insertSnapshot } from '../db/queries.js';
-import { setMockTestOverride } from './metricsCollector.js';
 import { validateDestinationOrThrow } from './destinationValidator.js';
 import { readSippStatistics, newSippWorkingDir } from './sippStatisticsReader.js';
-
-const MOCK = process.env.MOCK_MODE === 'true';
 
 // Hard limits — enforced regardless of what the frontend sends
 const LIMITS = {
@@ -76,11 +73,7 @@ export async function runTest(params, initiatedBy) {
     status: 'running',
   };
 
-  if (MOCK) {
-    runMockTest(testId, resolved);
-  } else {
-    runRealSipp(testId, resolved);
-  }
+  runRealSipp(testId, resolved);
 
   return { testId, ...resolved };
 }
@@ -94,47 +87,6 @@ export function stopTest() {
   }
 
   finishTest(currentTest.id, 'STOPPED', {});
-}
-
-// --- Mock test simulation ---
-
-function runMockTest(testId, params) {
-  setMockTestOverride({ targetCalls: params.max_calls });
-
-  const rampMs    = (params.max_calls / params.ramp_rate) * 1000;
-  const totalMs   = params.duration * 1000;
-  const startTime = Date.now();
-  let   snapshotTimer = null;
-  const snapshots = [];
-
-  const tick = setInterval(() => {
-    if (!currentTest) { clearInterval(tick); return; }
-
-    const elapsed   = Date.now() - startTime;
-    const progress  = Math.min(elapsed / totalMs, 1);
-    const rampProg  = Math.min(elapsed / rampMs, 1);
-    const calls     = Math.round(rampProg * params.max_calls * (1 + (Math.random() - 0.5) * 0.1));
-    const errorRate = calls > params.max_calls * 0.9 ? (Math.random() * 8) : (Math.random() * 1.5);
-
-    currentTest.elapsed     = Math.round(elapsed / 1000);
-    currentTest.activeCalls = calls;
-    currentTest.errorRate   = Math.round(errorRate * 10) / 10;
-    currentTest.progress    = Math.round(progress * 100);
-
-    const snap = { calls, errorRate: currentTest.errorRate, elapsed: currentTest.elapsed };
-    snapshots.push(snap);
-    if (snapshots.length % 6 === 0) insertSnapshot(testId, snap).catch(e => console.error('[DB] Snapshot error:', e.message)); // persist every 30s
-
-    if (onProgress) onProgress({ ...currentTest });
-
-    if (elapsed >= totalMs) {
-      clearInterval(tick);
-      setMockTestOverride(null);
-
-      const summary = buildSummary(snapshots, params);
-      finishTest(testId, summary.passed ? 'PASS' : 'FAIL', summary);
-    }
-  }, 1000);
 }
 
 // --- Real SIPp execution ---

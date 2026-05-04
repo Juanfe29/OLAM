@@ -1,7 +1,6 @@
 import { NodeSSH } from 'node-ssh';
 import net from 'net';
 
-const MOCK = process.env.MOCK_MODE === 'true';
 const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 30000;
 
@@ -18,11 +17,6 @@ let streamCleanups = [];
 let tunnelServer = null;
 
 async function connect() {
-  if (MOCK) {
-    connected = true;
-    console.log('[SSH] Mock mode — no real SSH connection');
-    return;
-  }
 
   ssh = new NodeSSH();
   try {
@@ -60,7 +54,7 @@ async function connect() {
 }
 
 function startTunnel() {
-  if (!TUNNEL_VIA_SSH || MOCK || !ssh?.connection) return;
+  if (!TUNNEL_VIA_SSH || !ssh?.connection) return;
   if (tunnelServer) return;
 
   tunnelServer = net.createServer((socket) => {

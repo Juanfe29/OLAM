@@ -3,7 +3,6 @@ import { parseLine } from './logParser.js';
 import { addExternalAlert, clearExternalAlert } from './anomalyDetector.js';
 
 const LOGS_PATH = process.env.LOGS_PATH || '/var/lib/3cxpbx/Instance1/Data/Logs';
-const MOCK = process.env.MOCK_MODE === 'true';
 const PARSER_STALE_MS = 2 * 60 * 1000;
 const ALERT_COOLDOWN_MS = 60 * 1000; // mínimo entre re-emisiones del mismo estado
 
@@ -44,11 +43,6 @@ let streamCleanup = null;
 
 export function startLogReader(onAlert) {
   onAlertCallback = onAlert;
-
-  if (MOCK) {
-    console.log('[LogReader] Mock mode — no SSH log tailing');
-    return;
-  }
 
   attachStream();
   startWatchdog();
