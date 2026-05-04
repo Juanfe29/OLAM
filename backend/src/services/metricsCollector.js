@@ -14,6 +14,12 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+function formatNumber(value, decimals) {
+  if (value === null || value === undefined) return null;
+  const factor = Math.pow(10, decimals);
+  return Math.round(value * factor) / factor;
+}
+
 function buildMetricsShape(d) {
   return {
     timestamp: new Date().toISOString(),
@@ -27,14 +33,14 @@ function buildMetricsShape(d) {
     calls: {
       active:    d.activeCalls,
       tier:      32,
-      pdd_p95:   Math.round(d.pdd * 100) / 100,
-      asr:       Math.round(d.asr * 10) / 10,
-      errorRate: Math.round(d.errorRate * 10) / 10,
+      pdd_p95:   formatNumber(d.pdd, 2),
+      asr:       formatNumber(d.asr, 1),
+      errorRate: formatNumber(d.errorRate, 1),
     },
     quality: {
-      mos:        Math.round(d.mos * 100) / 100,
-      jitter_p95: Math.round(d.jitterMs * 10) / 10,
-      packetLoss: Math.round(d.packetLoss * 100) / 100,
+      mos:        formatNumber(d.mos, 2),
+      jitter_p95: formatNumber(d.jitterMs, 1),
+      packetLoss: formatNumber(d.packetLoss, 2),
     },
     trunk: {
       registered:     d.trunkReg,
@@ -42,13 +48,13 @@ function buildMetricsShape(d) {
       channelsTotal:  d.channelsTotal,
       errors408:      d.errors408,
       errors503:      d.errors503,
-      pddToCarrier:   Math.round((d.pdd * 0.6) * 100) / 100,
+      pddToCarrier:   d.pdd !== null ? formatNumber(d.pdd * 0.6, 2) : null,
     },
     queue: {
       waiting:      d.queueWaiting,
       agentsOnline: d.agentsOnline,
-      serviceLevel: Math.round(d.serviceLevel * 10) / 10,
-      abandonment:  Math.round(d.abandonment * 10) / 10,
+      serviceLevel: formatNumber(d.serviceLevel, 1),
+      abandonment:  formatNumber(d.abandonment, 1),
     },
   };
 }

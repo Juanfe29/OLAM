@@ -112,14 +112,11 @@ function scheduleReconnect() {
 }
 
 export async function execCommand(cmd) {
-  if (MOCK) return { stdout: '', stderr: '' };
   if (!connected || !ssh) throw new Error('SSH not connected');
   return ssh.execCommand(cmd, { execOptions: { pty: false } });
 }
 
 export function execStream(cmd, onData, onClose) {
-  if (MOCK) return () => {};
-
   if (!connected || !ssh?.connection) {
     console.warn('[SSH] execStream called but not connected');
     return () => {};
