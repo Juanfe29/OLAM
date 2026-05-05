@@ -103,23 +103,34 @@ function runRealSipp(testId, params) {
   const sippCwd = newSippWorkingDir();
   fs.mkdirSync(sippCwd, { recursive: true });
 
+  // El scenario built-in `-sn uac` no maneja el 407 challenge digest del 3CX:
+  // la primera respuesta es Proxy-Authenticate y aborta la llamada sin
+  // reintentar con Authorization. Cuando hay credenciales en .env usamos
+  // un scenario XML custom (uac_auth.xml) que hace el handshake completo:
+  // INVITE → 407 → ACK → INVITE+[authentication] → 200 → ACK → BYE.
+  const authUser = process.env.SIPP_AUTH_USER;
+  const authPass = process.env.SIPP_AUTH_PASS;
+  const useAuthScenario = Boolean(authUser && authPass);
+
+  const scenarioArgs = useAuthScenario
+    ? ['-sf', path.resolve(process.cwd(), 'sipp-scenarios', 'uac_auth.xml')]
+    : ['-sn', 'uac'];
+
   const args = [
     target,
-    '-sn', 'uac',
+    ...scenarioArgs,
     '-s',  params.destination,
     '-m',  String(params.max_calls),
     '-r',  String(params.ramp_rate),
     '-d',  String(durationMs),
     '-t',  'u1',
-    '-recv_timeout', '5000',
+    '-recv_timeout', '15000',
     '-trace_err',
     '-trace_stat',
     '-nostdin',
   ];
 
-  const authUser = process.env.SIPP_AUTH_USER;
-  const authPass = process.env.SIPP_AUTH_PASS;
-  if (authUser && authPass) {
+  if (useAuthScenario) {
     args.push('-au', authUser, '-ap', authPass);
   }
 
@@ -154,12 +165,10 @@ function runRealSipp(testId, params) {
   sippProcess.stderr.on('data', (chunk) => {
     const line = chunk.toString();
     parseSippStats(line, snapshots, testId);
-    // Visibilidad: si SIPp emite errores fatales (DLL faltante, bind fail,
-    // socket error, auth) los logueamos crudo. Filtramos para no inundar
-    // con líneas de stats normales que ya parsea parseSippStats.
-    if (/error|fatal|cannot|unable|undefined symbol|\.dll|terminat/i.test(line)) {
-      console.error('[SIPp:stderr]', line.trim());
-    }
+    // DIAGNÓSTICO: loguear TODO stderr crudo, sin filtro.
+    // Antes filtrábamos por /error|fatal|.../ pero perdíamos mensajes útiles
+    // cuando SIPp moría sin matchear esos patrones.
+    console.error('[SIPp:stderr]', line.trimEnd());
     if (currentTest) {
       currentTest.elapsed = Math.round((Date.now() - startTime) / 1000);
       if (onProgress) onProgress({ ...currentTest });
