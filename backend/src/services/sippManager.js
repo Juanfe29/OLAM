@@ -110,6 +110,8 @@ function runRealSipp(testId, params) {
     '-m',  String(params.max_calls),
     '-r',  String(params.ramp_rate),
     '-d',  String(durationMs),
+    '-t',  'u1',
+    '-recv_timeout', '5000',
     '-trace_err',
     '-trace_stat',
     '-nostdin',
