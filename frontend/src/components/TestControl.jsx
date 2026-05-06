@@ -6,11 +6,13 @@ const SCENARIOS = {
   light:  { calls: 10,  duration: 60,    ramp: 2,  label: 'Light'  },
   medium: { calls: 50,  duration: 120,   ramp: 5,  label: 'Medium' },
   peak:   { calls: 180, duration: 300,   ramp: 10, label: 'Peak'   },
-  stress: { calls: 220, duration: 180,   ramp: 15, label: 'Stress' },
+  stress: { calls: 256, duration: 180,   ramp: 15, label: 'Stress' },
   soak:   { calls: 125, duration: 14400, ramp: 5,  label: 'Soak'   },
 };
 
-const LICENSE_TIER = 32;
+// Tier de licencia del 3CX target. El backend cap duro está en LIMITS.maxCalls=256.
+// Si OLAM downgradea a SC192 en producción, ajustar a 192.
+const LICENSE_TIER = 256;
 
 export function TestControl({ testStatus, onTestStart }) {
   const [calls,       setCalls]       = useState(10);
@@ -76,7 +78,7 @@ export function TestControl({ testStatus, onTestStart }) {
 
       {/* Sliders */}
       <div className="grid grid-cols-1 gap-4">
-        <Slider label="Llamadas simultáneas" value={calls} min={1} max={220} onChange={setCalls} disabled={running} />
+        <Slider label="Llamadas simultáneas" value={calls} min={1} max={256} onChange={setCalls} disabled={running} />
         <Slider label="Duración (segundos)"  value={duration} min={10} max={28800} onChange={setDuration} disabled={running} />
         <Slider label="Rampa (llamadas/seg)" value={ramp} min={1} max={20} onChange={setRamp} disabled={running} />
       </div>
@@ -116,7 +118,7 @@ export function TestControl({ testStatus, onTestStart }) {
         <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded px-3 py-2">
           <span className="text-yellow-400 text-sm">⚠</span>
           <p className="text-xs text-yellow-300 leading-snug">
-            <strong>{calls} llamadas excede la licencia SC32.</strong> El 3CX rechazará llamadas por encima de 32 concurrentes hasta hacer el upgrade a SC192.
+            <strong>{calls} llamadas supera el tier {LICENSE_TIER}.</strong> El 3CX rechazará llamadas por encima del límite de licencia con código <code className="font-mono">600 Busy Everywhere</code>.
           </p>
         </div>
       )}

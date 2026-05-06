@@ -25,6 +25,7 @@ const SCENARIOS = {
 
 let currentTest = null;
 let sippProcess  = null;
+let uasProcess   = null;  // SIPp UAS para B2BUA real (load testing profesional)
 let onProgress   = null;
 let onComplete   = null;
 
@@ -86,8 +87,85 @@ export function stopTest() {
     sippProcess.kill('SIGTERM');
     sippProcess = null;
   }
+  stopUasSipp();
 
   finishTest(currentTest.id, 'STOPPED', {});
+}
+
+// --- SIPp UAS (load testing profesional con B2BUA real) ---
+//
+// Con SIPP_UAS_ENABLED=true, el manager spawnea un proceso SIPp UAS antes
+// del UAC. El UAS escucha en SIPP_UAS_PORT (default 5070) y responde 200 OK
+// automáticamente a cualquier INVITE que reciba.
+//
+// El 3CX rutea via outbound rule las llamadas hacia este UAS, haciendo
+// B2BUA real igual que en producción (Tigo UNE → 3CX → agente). Cada call
+// activa consume 2 channels del 3CX (un leg por trunk), reflejando el
+// comportamiento real del PBX bajo carga.
+//
+// Sin UAS, el destino es una extensión/queue/IVR interno cuyos límites
+// propios opacan la verdadera capacidad del 3CX.
+
+function startUasSipp(sippBin, childEnv) {
+  if (process.env.SIPP_UAS_ENABLED !== 'true') return false;
+  if (uasProcess) {
+    console.log('[SIPp UAS] ya corriendo, reusando');
+    return true;
+  }
+
+  const uasPort     = process.env.SIPP_UAS_PORT || '5070';
+  const uasScenario = path.resolve(process.cwd(), 'sipp-scenarios', 'uas_answer.xml');
+
+  if (!fs.existsSync(uasScenario)) {
+    console.error(`[SIPp UAS] scenario no encontrado en ${uasScenario}, abortando`);
+    return false;
+  }
+
+  const args = [
+    '-sf', uasScenario,
+    '-p',  uasPort,
+    '-bg',                // bg mode: SIPp se daemoniza pero spawn sigue capturando stdio
+    '-trace_err',
+    '-nostdin',
+  ];
+
+  console.log(`[SIPp UAS] iniciando en :${uasPort} con scenario ${uasScenario}`);
+  try {
+    uasProcess = spawn(sippBin, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env:   childEnv,
+    });
+  } catch (err) {
+    console.error('[SIPp UAS] spawn falló:', err.message);
+    uasProcess = null;
+    return false;
+  }
+
+  uasProcess.stderr.on('data', (chunk) => {
+    const line = chunk.toString().trimEnd();
+    if (line) console.error('[SIPp UAS:stderr]', line);
+  });
+  uasProcess.stdout.on('data', (chunk) => {
+    const line = chunk.toString().trimEnd();
+    if (line) console.log('[SIPp UAS:stdout]', line);
+  });
+  uasProcess.on('close', (code) => {
+    console.log(`[SIPp UAS] proceso terminó: code=${code}`);
+    uasProcess = null;
+  });
+  uasProcess.on('error', (err) => {
+    console.error('[SIPp UAS] error:', err.message);
+  });
+
+  return true;
+}
+
+function stopUasSipp() {
+  if (uasProcess) {
+    console.log('[SIPp UAS] deteniendo');
+    try { uasProcess.kill('SIGTERM'); } catch { /* noop */ }
+    uasProcess = null;
+  }
 }
 
 // --- Real SIPp execution ---
@@ -146,6 +224,12 @@ function runRealSipp(testId, params) {
     ? { ...process.env, PATH: cygwinBin + path.delimiter + (process.env.PATH || '') }
     : process.env;
 
+  // UAS first: el 3CX necesita el destino respondiendo cuando llegue el primer
+  // INVITE ruteado por la outbound rule. Si UAS no arranca (puerto ocupado,
+  // scenario faltante), seguimos sin él — el test caerá en el destino interno
+  // que estaba configurado antes (extensión/queue/IVR), comportamiento legacy.
+  startUasSipp(sippBin, childEnv);
+
   try {
     sippProcess = spawn(sippBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -153,6 +237,7 @@ function runRealSipp(testId, params) {
       env: childEnv,
     });
   } catch (err) {
+    stopUasSipp();
     finishTest(testId, 'ERROR', { error: err.message });
     throw err;
   }
@@ -189,6 +274,7 @@ function runRealSipp(testId, params) {
       console.warn('[SIPp] no se pudo listar cwd:', e.message);
     }
     sippProcess = null;
+    stopUasSipp();
 
     // BLOCK-02: leer el _statistics.csv final de SIPp en lugar de
     // depender solo del parser de stderr. Si no aparece (SIPp crasheó
@@ -218,6 +304,7 @@ function runRealSipp(testId, params) {
 
   sippProcess.on('error', (err) => {
     console.error('[SIPp] Process error:', err.message);
+    stopUasSipp();
     finishTest(testId, 'ERROR', { error: err.message });
   });
 }
