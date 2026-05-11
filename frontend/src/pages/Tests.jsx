@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../hooks/useSocket.js';
 import { TestControl } from '../components/TestControl.jsx';
+import { BatteryControl } from '../components/BatteryControl.jsx';
 
 export default function Tests() {
   const { on, off } = useSocket();
+  const [mode,         setMode]         = useState('single'); // 'single' | 'battery'
   const [testStatus,   setTestStatus]   = useState({ running: false });
   const [liveData,     setLiveData]     = useState([]);
   const [lastResult,   setLastResult]   = useState(null);
@@ -42,8 +44,17 @@ export default function Tests() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold text-slate-100">Control de pruebas</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-slate-100">Control de pruebas</h1>
+        <div className="flex gap-1 bg-surface-raised border border-surface-border rounded-lg p-1">
+          <ModeTab label="Individual" active={mode === 'single'}  onClick={() => setMode('single')}  />
+          <ModeTab label="Batería progresiva" active={mode === 'battery'} onClick={() => setMode('battery')} />
+        </div>
+      </div>
 
+      {mode === 'battery' ? (
+        <BatteryControl />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Config */}
         <TestControl testStatus={testStatus} onTestStart={handleTestStart} />
@@ -110,16 +121,42 @@ export default function Tests() {
               </div>
               {lastResult.summary && (
                 <div className="grid grid-cols-3 gap-2 text-xs text-slate-400 font-mono">
-                  <span>Max calls: {lastResult.summary.maxCalls}</span>
-                  <span>Avg error: {lastResult.summary.avgErrorRate}%</span>
-                  <span>Peak reached: {lastResult.summary.peakReached ? 'sí' : 'no'}</span>
+                  {lastResult.summary.source === 'csv' ? (
+                    <>
+                      <span>Total: {lastResult.summary.totalCalls}</span>
+                      <span>Success: {lastResult.summary.successful}</span>
+                      <span>Failed: {lastResult.summary.failed}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Max calls: {lastResult.summary.maxCalls}</span>
+                      <span>Avg error: {lastResult.summary.avgErrorRate}%</span>
+                      <span>Peak reached: {lastResult.summary.peakReached ? 'sí' : 'no'}</span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
+      )}
     </div>
+  );
+}
+
+function ModeTab({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+        active
+          ? 'bg-sky-500/20 text-sky-400'
+          : 'text-slate-400 hover:text-slate-200'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

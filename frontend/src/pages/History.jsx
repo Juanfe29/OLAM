@@ -71,12 +71,25 @@ export default function History() {
                     }
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => openDetail(t.id)}
-                      className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
-                    >
-                      Ver detalle →
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      {t.report_url && (
+                        <a
+                          href={t.report_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          HTML ↗
+                        </a>
+                      )}
+                      <button
+                        onClick={() => openDetail(t.id)}
+                        className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                      >
+                        Ver detalle →
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -98,6 +111,16 @@ export default function History() {
                 <span className="ml-2 text-sm text-slate-400">{selected.scenario}</span>
               </div>
               <div className="flex items-center gap-3">
+                {selected.report_url && (
+                  <a
+                    href={selected.report_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-3 py-1.5 rounded border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 hover:border-emerald-400 transition-colors"
+                  >
+                    Ver reporte HTML ↗
+                  </a>
+                )}
                 <button
                   onClick={() => exportJSON(selected)}
                   className="text-xs px-3 py-1.5 rounded border border-surface-border text-slate-300 hover:text-sky-400 hover:border-sky-500 transition-colors"
@@ -133,13 +156,58 @@ export default function History() {
                 </div>
               )}
 
+              {selected.result === 'FAIL' && selected.summary?.failReason && (
+                <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+                  <span className="text-red-400 mt-0.5">⚠</span>
+                  <div className="flex flex-col gap-2 w-full">
+                    <p className="text-xs uppercase tracking-widest text-red-400">Motivo del fallo</p>
+                    <p className="text-sm text-red-300">{selected.summary.failReason}</p>
+                    {selected.summary.sipErrors && Object.keys(selected.summary.sipErrors).length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {Object.entries(selected.summary.sipErrors)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([code, count]) => (
+                            <span key={code} className="text-xs font-mono px-2 py-0.5 rounded bg-red-900/40 border border-red-500/30 text-red-300">
+                              {code === 'timeout' ? `Sin respuesta × ${count}` : `SIP ${code} × ${count}`}
+                            </span>
+                          ))
+                        }
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selected.result === 'ERROR' && selected.summary?.error && (
+                <div className="flex items-start gap-3 bg-orange-500/10 border border-orange-500/30 rounded-lg px-4 py-3">
+                  <span className="text-orange-400 mt-0.5">⚠</span>
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-orange-400 mb-1">Error</p>
+                    <p className="text-sm text-orange-300 font-mono">{selected.summary.error}</p>
+                  </div>
+                </div>
+              )}
+
               {selected.summary && (
                 <div className="bg-surface border border-surface-border rounded-lg p-4">
                   <p className="text-xs uppercase tracking-widest text-slate-500 mb-3">Resumen</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
-                    <DetailStat label="Max calls"   value={selected.summary.maxCalls}   />
-                    <DetailStat label="Avg calls"   value={selected.summary.avgCalls}   />
-                    <DetailStat label="Avg error"   value={`${selected.summary.avgErrorRate}%`} />
+                    {selected.summary.source === 'csv' ? (
+                      <>
+                        <DetailStat label="Total calls"  value={selected.summary.totalCalls} />
+                        <DetailStat label="Successful"   value={selected.summary.successful} />
+                        <DetailStat label="Failed"       value={selected.summary.failed} />
+                        <DetailStat label="Max concurrent" value={selected.summary.maxCalls} />
+                        <DetailStat label="Call rate"    value={selected.summary.callRate != null ? `${selected.summary.callRate.toFixed(2)} cps` : '—'} />
+                        <DetailStat label="Avg error"    value={`${selected.summary.avgErrorRate}%`} />
+                      </>
+                    ) : (
+                      <>
+                        <DetailStat label="Max calls"   value={selected.summary.maxCalls} />
+                        <DetailStat label="Avg calls"   value={selected.summary.avgCalls} />
+                        <DetailStat label="Avg error"   value={`${selected.summary.avgErrorRate}%`} />
+                      </>
+                    )}
                     <DetailStat label="Peak reached" value={selected.summary.peakReached ? 'sí' : 'no'} />
                     <DetailStat label="Pasó"         value={selected.summary.passed ? 'sí' : 'no'} />
                   </div>

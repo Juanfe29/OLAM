@@ -1,26 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const SCENARIOS = {
-  smoke:  { calls: 1,   duration: 30,    ramp: 1,  label: 'Smoke'  },
-  light:  { calls: 10,  duration: 60,    ramp: 2,  label: 'Light'  },
-  medium: { calls: 50,  duration: 120,   ramp: 5,  label: 'Medium' },
-  peak:   { calls: 180, duration: 300,   ramp: 10, label: 'Peak'   },
-  stress: { calls: 220, duration: 180,   ramp: 15, label: 'Stress' },
-  soak:   { calls: 125, duration: 14400, ramp: 5,  label: 'Soak'   },
+  smoke:  { calls: 1,   duration: 30, ramp: 1,  label: 'Smoke'  },
+  light:  { calls: 10,  duration: 30, ramp: 2,  label: 'Light'  },
+  medium: { calls: 50,  duration: 30, ramp: 5,  label: 'Medium' },
+  peak:   { calls: 180, duration: 30, ramp: 10, label: 'Peak'   },
+  stress: { calls: 256, duration: 30, ramp: 15, label: 'Stress' },
 };
 
-const LICENSE_TIER = 32;
+// Tier de licencia del 3CX target. El backend cap duro está en LIMITS.maxCalls=256.
+// Si OLAM downgradea a SC192 en producción, ajustar a 192.
+const LICENSE_TIER = 256;
 
 export function TestControl({ testStatus, onTestStart }) {
   const [calls,       setCalls]       = useState(10);
-  const [duration,    setDuration]    = useState(60);
+  const [duration,    setDuration]    = useState(30);
   const [ramp,        setRamp]        = useState(2);
-  const [destination, setDestination] = useState('100');
+  const [destination, setDestination] = useState('1910');
   const [error,       setError]       = useState('');
   const [loading,     setLoading]     = useState(false);
+  const [validExts,   setValidExts]   = useState([]);
 
   const running = testStatus?.running;
+
+  useEffect(() => {
+    axios.get('/api/tests/destinations')
+      .then(r => setValidExts(r.data?.valid || []))
+      .catch(() => setValidExts([]));
+  }, []);
 
   function applyPreset(key) {
     const p = SCENARIOS[key];
@@ -69,21 +77,39 @@ export function TestControl({ testStatus, onTestStart }) {
 
       {/* Sliders */}
       <div className="grid grid-cols-1 gap-4">
-        <Slider label="Llamadas simultáneas" value={calls} min={1} max={220} onChange={setCalls} disabled={running} />
-        <Slider label="Duración (segundos)"  value={duration} min={10} max={28800} onChange={setDuration} disabled={running} />
+        <Slider label="Llamadas simultáneas" value={calls} min={1} max={256} onChange={setCalls} disabled={running} />
+        <Slider label="Duración (segundos)"  value={duration} min={5}  max={30}    onChange={setDuration} disabled={running} />
         <Slider label="Rampa (llamadas/seg)" value={ramp} min={1} max={20} onChange={setRamp} disabled={running} />
       </div>
 
       {/* Destination */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs text-slate-400 whitespace-nowrap">Destino (extensión)</label>
-        <input
-          type="text"
-          value={destination}
-          onChange={e => setDestination(e.target.value)}
-          disabled={running}
-          className="flex-1 bg-surface border border-surface-border rounded px-3 py-1.5 text-sm font-mono text-slate-200 focus:outline-none focus:border-sky-500 disabled:opacity-40"
-        />
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-slate-400 whitespace-nowrap">Destino (extensión)</label>
+          <input
+            type="text"
+            value={destination}
+            onChange={e => setDestination(e.target.value)}
+            disabled={running}
+            className="flex-1 bg-surface border border-surface-border rounded px-3 py-1.5 text-sm font-mono text-slate-200 focus:outline-none focus:border-sky-500 disabled:opacity-40"
+          />
+        </div>
+        {validExts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pl-[6.5rem]">
+            <span className="text-xs text-slate-500">Válidas:</span>
+            {validExts.map(ext => (
+              <button
+                key={ext}
+                type="button"
+                onClick={() => setDestination(ext)}
+                disabled={running}
+                className="text-xs font-mono px-1.5 py-0.5 rounded border border-surface-border text-slate-400 hover:border-sky-500 hover:text-sky-400 disabled:opacity-40 transition-colors"
+              >
+                {ext}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* License warning */}
@@ -91,7 +117,7 @@ export function TestControl({ testStatus, onTestStart }) {
         <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded px-3 py-2">
           <span className="text-yellow-400 text-sm">⚠</span>
           <p className="text-xs text-yellow-300 leading-snug">
-            <strong>{calls} llamadas excede la licencia SC32.</strong> El 3CX rechazará llamadas por encima de 32 concurrentes hasta hacer el upgrade a SC192.
+            <strong>{calls} llamadas supera el tier {LICENSE_TIER}.</strong> El 3CX rechazará llamadas por encima del límite de licencia con código <code className="font-mono">600 Busy Everywhere</code>.
           </p>
         </div>
       )}

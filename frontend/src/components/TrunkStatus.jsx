@@ -1,4 +1,21 @@
-export function TrunkStatus({ trunk }) {
+import { memo } from 'react';
+
+// memo con custom equality: el objeto `trunk` viene como una nueva referencia
+// cada metrics:update aunque su contenido sea idéntico. La comparación shallow
+// default no ayuda; con esta function evaluamos solo los campos que afectan
+// la UI y skipeamos el render cuando ninguno cambió (caso común: trunk
+// estable pero CPU/RAM cambian).
+function trunkPropsEqual(prev, next) {
+  const a = prev.trunk || {};
+  const b = next.trunk || {};
+  return a.registered    === b.registered
+      && a.channelsUsed  === b.channelsUsed
+      && a.channelsTotal === b.channelsTotal
+      && a.errors408     === b.errors408
+      && a.errors503     === b.errors503;
+}
+
+export const TrunkStatus = memo(function TrunkStatus({ trunk }) {
   if (!trunk) return null;
 
   const usedPct = trunk.channelsTotal > 0
@@ -35,7 +52,7 @@ export function TrunkStatus({ trunk }) {
       </div>
     </div>
   );
-}
+}, trunkPropsEqual);
 
 function Stat({ label, value, warn }) {
   return (

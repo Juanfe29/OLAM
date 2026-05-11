@@ -1,9 +1,21 @@
 import axios from 'axios';
 import { getLogState } from './logReader.js';
+import { getCurrentTestActiveCalls } from './sippManager.js';
 
-const MOCK = process.env.MOCK_MODE === 'true';
-const POLL_INTERVAL = parseInt(process.env.LOG_POLL_INTERVAL || '5000');
+const POLL_INTERVAL = parseInt(process.env.METRICS_POLL_INTERVAL || process.env.LOG_POLL_INTERVAL || '2000');
 const NODE_EXPORTER_URL = process.env.NODE_EXPORTER_URL || 'http://172.18.164.28:9100/metrics';
+// Tier de licencia 3CX en uso. Define el techo de calls.tier que se pinta en
+// el dashboard y los umbrales de alertas "cerca del límite". Configurable
+// porque el assessment cambió de SC32 (.28) a SC256 (.33) y mañana puede
+// volver a cambiar. Default 256 alineado con el server `.33` actual.
+const LICENSE_TIER = parseInt(process.env.LICENSE_TIER || '256');
+
+// Capacidad de canales del trunk SIP que estamos auditando. Se usa para
+// calcular el % de uso de canales en TrunkStatus. Antes estaba hardcodeado
+// a 30 — herencia del setup viejo. Real:
+//   - OLAM SIPp Tester (.33): 256 (post-fix H-16)
+//   - Tigo UNE producción:    128
+const TRUNK_CHANNELS_TOTAL = parseInt(process.env.TRUNK_CHANNELS_TOTAL || '256');
 
 let currentMetrics = null;
 let pollTimer = null;
@@ -11,63 +23,14 @@ let pollTimer = null;
 // Track previous CPU counters for delta calculation
 let prevCpuCounters = null;
 
-// Mock state with realistic drift
-const mockState = {
-  activeCalls: 18,
-  errors408: 0,
-  trunkRegistered: true,
-  tick: 0,
-};
-
-function jitter(range) {
-  return (Math.random() - 0.5) * 2 * range;
-}
-
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-function buildMockMetrics(testOverride = null) {
-  mockState.tick++;
-
-  // Gradually drift active calls
-  mockState.activeCalls = clamp(
-    mockState.activeCalls + jitter(1.5),
-    testOverride ? testOverride.targetCalls * 0.85 : 8,
-    testOverride ? testOverride.targetCalls * 1.05 : 30,
-  );
-
-  // Simulate occasional 408 burst
-  if (Math.random() < 0.05) mockState.errors408++;
-
-  const calls = Math.round(mockState.activeCalls);
-  const ratio = calls / 32; // SC32 baseline
-
-  return buildMetricsShape({
-    cpu:           clamp(35 + ratio * 32 + jitter(4), 0, 100),
-    ram:           clamp(55 + ratio * 18 + jitter(3), 0, 100),
-    loadAvg:       [clamp(1.1 + ratio * 1.2, 0, 16), clamp(1.0 + ratio, 0, 16), clamp(0.9 + ratio * 0.8, 0, 16)],
-    diskOs:        42,
-    diskRec:       28,
-    netRx:         Math.round(4_000_000 + ratio * 3_000_000 + jitter(200_000)),
-    netTx:         Math.round(3_500_000 + ratio * 2_500_000 + jitter(150_000)),
-    activeCalls:   calls,
-    errors408:     mockState.errors408,
-    errors503:     0,
-    trunkReg:      mockState.trunkRegistered,
-    channelsUsed:  Math.round(calls * 0.45),
-    channelsTotal: 30,
-    pdd:           clamp(1.2 + ratio * 1.8 + jitter(0.2), 0.5, 8),
-    asr:           clamp(98.5 - ratio * 4 + jitter(0.5), 0, 100),
-    errorRate:     clamp(ratio * 2.5 + jitter(0.4), 0, 100),
-    mos:           clamp(4.3 - ratio * 0.7 + jitter(0.1), 1, 5),
-    jitterMs:      clamp(8 + ratio * 18 + jitter(2), 0, 150),
-    packetLoss:    clamp(0.1 + ratio * 0.9 + jitter(0.1), 0, 100),
-    queueWaiting:  Math.max(0, Math.round(ratio * 5 + jitter(1))),
-    agentsOnline:  12,
-    serviceLevel:  clamp(87 - ratio * 18 + jitter(3), 0, 100),
-    abandonment:   clamp(2.5 + ratio * 9 + jitter(1), 0, 100),
-  });
+function formatNumber(value, decimals) {
+  if (value === null || value === undefined) return null;
+  const factor = Math.pow(10, decimals);
+  return Math.round(value * factor) / factor;
 }
 
 function buildMetricsShape(d) {
@@ -82,15 +45,15 @@ function buildMetricsShape(d) {
     },
     calls: {
       active:    d.activeCalls,
-      tier:      32,
-      pdd_p95:   Math.round(d.pdd * 100) / 100,
-      asr:       Math.round(d.asr * 10) / 10,
-      errorRate: Math.round(d.errorRate * 10) / 10,
+      tier:      LICENSE_TIER,
+      pdd_p95:   formatNumber(d.pdd, 2),
+      asr:       formatNumber(d.asr, 1),
+      errorRate: formatNumber(d.errorRate, 1),
     },
     quality: {
-      mos:        Math.round(d.mos * 100) / 100,
-      jitter_p95: Math.round(d.jitterMs * 10) / 10,
-      packetLoss: Math.round(d.packetLoss * 100) / 100,
+      mos:        formatNumber(d.mos, 2),
+      jitter_p95: formatNumber(d.jitterMs, 1),
+      packetLoss: formatNumber(d.packetLoss, 2),
     },
     trunk: {
       registered:     d.trunkReg,
@@ -98,13 +61,13 @@ function buildMetricsShape(d) {
       channelsTotal:  d.channelsTotal,
       errors408:      d.errors408,
       errors503:      d.errors503,
-      pddToCarrier:   Math.round((d.pdd * 0.6) * 100) / 100,
+      pddToCarrier:   d.pdd !== null ? formatNumber(d.pdd * 0.6, 2) : null,
     },
     queue: {
       waiting:      d.queueWaiting,
       agentsOnline: d.agentsOnline,
-      serviceLevel: Math.round(d.serviceLevel * 10) / 10,
-      abandonment:  Math.round(d.abandonment * 10) / 10,
+      serviceLevel: formatNumber(d.serviceLevel, 1),
+      abandonment:  formatNumber(d.abandonment, 1),
     },
   };
 }
@@ -177,7 +140,7 @@ async function fetchRealMetrics() {
 
   let hostMetrics = null;
   try {
-    const { data } = await axios.get(NODE_EXPORTER_URL, { timeout: 4000 });
+    const { data } = await axios.get(NODE_EXPORTER_URL, { timeout: 800 });
     const pm = parsePrometheus(data);
 
     const cpuPct = extractCpuPercent(pm);
@@ -206,8 +169,18 @@ async function fetchRealMetrics() {
     hostMetrics = { cpu: 0, ram: 0, loadAvg: [0, 0, 0], disk: { os: 0, recordings: 0 }, network: { rx: 0, tx: 0 } };
   }
 
-  const calls = logState.activeCalls;
-  const ratio  = calls / 32;
+  // Si hay un test SIPp corriendo, usar su conteo (de CSV en vivo) — es la
+  // fuente confiable durante load tests. Sin test, fallback al log parser
+  // del 3CX. Razón: en `.33` los eventos `CallStorageSize` solo se escriben
+  // durante el routing (~100ms), demasiado breve para que el polling de
+  // métricas (5s) cace el pico real.
+  const testCalls = getCurrentTestActiveCalls();
+  const calls     = testCalls !== null ? testCalls : logState.activeCalls;
+  if (testCalls !== null) {
+    console.log(`[Metrics] activeCalls fuente=csv valor=${testCalls}`);
+  } else {
+    console.log(`[Metrics] activeCalls fuente=logparser valor=${calls}`);
+  }
 
   return buildMetricsShape({
     ...hostMetrics,
@@ -215,18 +188,18 @@ async function fetchRealMetrics() {
     errors408:     logState.errors408,
     errors503:     logState.errors503,
     trunkReg:      logState.trunkRegistered,
-    channelsUsed:  logState.activeCalls,
-    channelsTotal: 30,
-    pdd:           0,
-    asr:           100,
-    errorRate:     0,
-    mos:           0,
-    jitterMs:      0,
-    packetLoss:    0,
+    channelsUsed:  calls,
+    channelsTotal: TRUNK_CHANNELS_TOTAL,
+    pdd:           null,
+    asr:           null,
+    errorRate:     null,
+    mos:           null,
+    jitterMs:      logState.jitterMs,
+    packetLoss:    logState.packetLoss,
     queueWaiting:  logState.queueWaiting,
     agentsOnline:  logState.agentsOnline,
-    serviceLevel:  100,
-    abandonment:   0,
+    serviceLevel:  null,
+    abandonment:   null,
     diskOs: hostMetrics.disk.os,
     diskRec: 0,
     netRx: hostMetrics.network.rx,
@@ -237,27 +210,26 @@ async function fetchRealMetrics() {
 export function startMetricsCollection(onMetrics) {
   const collect = async () => {
     try {
-      currentMetrics = MOCK ? buildMockMetrics() : await fetchRealMetrics();
+      currentMetrics = await fetchRealMetrics();
       onMetrics(currentMetrics);
     } catch (err) {
       console.error('[Metrics] Collection error:', err.message);
     }
   };
 
-  collect();
-  pollTimer = setInterval(collect, POLL_INTERVAL);
+  // Warm-up: primer fetch solo para inicializar prevCpuCounters.
+  // Sin esto el primer broadcast tiene CPU=0 (delta sin baseline).
+  // Esperamos 1s y arrancamos el ciclo normal — el primer emit ya tiene delta real.
+  fetchRealMetrics()
+    .catch(() => {})
+    .finally(() => {
+      setTimeout(() => {
+        collect();
+        pollTimer = setInterval(collect, POLL_INTERVAL);
+      }, 1000);
+    });
 }
 
-// Called by sippManager to inject test-time overrides into mock data
-export function setMockTestOverride(override) {
-  if (MOCK) {
-    if (override) {
-      mockState.activeCalls = override.targetCalls * 0.3;
-    } else {
-      mockState.activeCalls = 18;
-    }
-  }
-}
 
 export function getCurrentMetrics() {
   return currentMetrics;

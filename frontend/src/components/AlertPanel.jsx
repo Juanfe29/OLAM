@@ -1,8 +1,13 @@
+import { memo } from 'react';
 import { LevelBadge } from './StatusBadge.jsx';
 
 const ORDER = { CRITICO: 0, ALTO: 1, MEDIO: 2, BAJO: 3 };
 
-export function AlertPanel({ alerts }) {
+// memo: AlertPanel se re-renderiza muchas veces innecesariamente cuando
+// solo cambian las métricas (cada 5s). El array `alerts` solo cambia cuando
+// llega un `alert:new` o el snapshot inicial — entre medio, su referencia
+// es estable y memo permite skip del render.
+export const AlertPanel = memo(function AlertPanel({ alerts }) {
   const sorted = [...(alerts || [])].sort(
     (a, b) => (ORDER[a.level] ?? 9) - (ORDER[b.level] ?? 9)
   );
@@ -34,4 +39,4 @@ export function AlertPanel({ alerts }) {
       </div>
     </div>
   );
-}
+});

@@ -1,6 +1,10 @@
+import { memo } from 'react';
 import { statusColor, statusBg } from './StatusBadge.jsx';
 
-export function MetricCard({ label, value, unit = '', ok, warn, decimals = 1, children }) {
+// memo: las props son primitivas (label, value, unit, ok, warn, decimals) o
+// strings simples como children. Con shallow comparison default, un render
+// del Dashboard donde sólo cambió 1 KPI no triggea re-render de los otros 19.
+export const MetricCard = memo(function MetricCard({ label, value, unit = '', ok, warn, decimals = 1, children }) {
   const display = value === null || value === undefined ? '—' : Number(value).toFixed(decimals);
   const color   = statusColor(value, ok, warn);
   const bg      = statusBg(value, ok, warn);
@@ -15,4 +19,4 @@ export function MetricCard({ label, value, unit = '', ok, warn, decimals = 1, ch
       {children && <div className="text-xs text-slate-500 mt-1">{children}</div>}
     </div>
   );
-}
+});

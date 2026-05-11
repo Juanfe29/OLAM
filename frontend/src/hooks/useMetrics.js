@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './useSocket.js';
 
-const MAX_HISTORY = 360; // 30 minutes at 5s intervals
+// 180 = 15 min @ 5s intervals. Antes era 360 (30 min) pero el SVG path de
+// Recharts con tantos puntos hacía sentir laggy el dashboard. 15 min sigue
+// dando contexto suficiente para ver tendencias durante un test de carga.
+const MAX_HISTORY = 180;
 
 export function useMetrics() {
   const { connected, on, off } = useSocket();

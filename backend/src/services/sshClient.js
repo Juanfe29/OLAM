@@ -1,7 +1,6 @@
 import { NodeSSH } from 'node-ssh';
 import net from 'net';
 
-const MOCK = process.env.MOCK_MODE === 'true';
 const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 30000;
 
@@ -18,21 +17,24 @@ let streamCleanups = [];
 let tunnelServer = null;
 
 async function connect() {
-  if (MOCK) {
-    connected = true;
-    console.log('[SSH] Mock mode — no real SSH connection');
-    return;
-  }
 
   ssh = new NodeSSH();
   try {
-    await ssh.connect({
+    const sshConfig = {
       host: process.env.SSH_HOST,
       port: parseInt(process.env.SSH_PORT || '22'),
       username: process.env.SSH_USER || 'root',
-      privateKeyPath: process.env.SSH_KEY_PATH,
       readyTimeout: 10000,
-    });
+    };
+
+    // Usar password si está disponible, si no usar key
+    if (process.env.SSH_PASSWORD) {
+      sshConfig.password = process.env.SSH_PASSWORD;
+    } else {
+      sshConfig.privateKeyPath = process.env.SSH_KEY_PATH;
+    }
+
+    await ssh.connect(sshConfig);
     connected = true;
     reconnectAttempts = 0;
     console.log(`[SSH] Connected to ${process.env.SSH_HOST}`);
@@ -60,7 +62,7 @@ async function connect() {
 }
 
 function startTunnel() {
-  if (!TUNNEL_VIA_SSH || MOCK || !ssh?.connection) return;
+  if (!TUNNEL_VIA_SSH || !ssh?.connection) return;
   if (tunnelServer) return;
 
   tunnelServer = net.createServer((socket) => {
@@ -118,14 +120,11 @@ function scheduleReconnect() {
 }
 
 export async function execCommand(cmd) {
-  if (MOCK) return { stdout: '', stderr: '' };
   if (!connected || !ssh) throw new Error('SSH not connected');
   return ssh.execCommand(cmd, { execOptions: { pty: false } });
 }
 
 export function execStream(cmd, onData, onClose) {
-  if (MOCK) return () => {};
-
   if (!connected || !ssh?.connection) {
     console.warn('[SSH] execStream called but not connected');
     return () => {};

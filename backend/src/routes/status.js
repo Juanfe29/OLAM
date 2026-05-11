@@ -13,7 +13,6 @@ router.get('/', (req, res) => {
     ...metrics,
     ssh: { connected: isConnected() },
     alerts: getActiveAlerts(),
-    mock: process.env.MOCK_MODE === 'true',
   });
 });
 
