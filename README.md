@@ -67,16 +67,16 @@ chmod 600 backend/keys/3cx_rsa
 
 ```env
 MOCK_MODE=false
-SSH_HOST=172.18.164.28
+SSH_HOST=172.18.164.33
 SSH_USER=root
 SSH_KEY_PATH=./keys/3cx_rsa
-NODE_EXPORTER_URL=http://172.18.164.28:9100/metrics
+NODE_EXPORTER_URL=http://172.18.164.33:9100/metrics
 ```
 
 ### 3. Verificar node_exporter en el servidor
 
 ```bash
-curl http://172.18.164.28:9100/metrics | head -5
+curl http://172.18.164.33:9100/metrics | head -5
 ```
 
 Si no responde, las métricas de CPU/RAM/disco retornarán 0. node_exporter debe estar corriendo como servicio en el servidor 3CX.
@@ -91,11 +91,11 @@ El indicador SSH en el dashboard debe ponerse verde.
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `SSH_HOST` | `172.18.164.28` | IP del servidor 3CX |
+| `SSH_HOST` | `172.18.164.33` | IP del servidor 3CX |
 | `SSH_PORT` | `22` | Puerto SSH |
 | `SSH_USER` | `root` | Usuario SSH |
 | `SSH_KEY_PATH` | `./keys/3cx_rsa` | Ruta a la clave privada SSH |
-| `NODE_EXPORTER_URL` | `http://172.18.164.28:9100/metrics` | Endpoint Prometheus del host |
+| `NODE_EXPORTER_URL` | `http://172.18.164.33:9100/metrics` | Endpoint Prometheus del host |
 | `MOCK_MODE` | `true` | `true` = datos simulados, `false` = SSH real |
 | `PORT` | `3000` | Puerto del backend |
 | `DB_PATH` | `./data/olam.db` | Ruta de la base de datos SQLite |
